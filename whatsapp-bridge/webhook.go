@@ -5,9 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -85,6 +88,44 @@ func webhooksEnabled() bool {
 	return webhookURL() != "" && getEnvBool("WEBHOOK_ENABLED", true)
 }
 
+// webhookTokenWarnOnce keeps the "token withheld" warning to one line per run
+// instead of one per inbound message.
+var webhookTokenWarnOnce sync.Once
+
+// isLoopbackHost reports whether host only reaches this machine.
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
+// webhookTokenAllowed reports whether the bridge token may be attached to a
+// webhook POST to target. The token also authorizes /api/* calls (including
+// sending messages), so it must not cross a network in cleartext: it is sent
+// over https, or over plain http only to a loopback host. A plain-http,
+// non-loopback receiver (e.g. host.docker.internal) can opt in explicitly with
+// WEBHOOK_ALLOW_INSECURE_TOKEN=true. The returned reason is empty when allowed.
+func webhookTokenAllowed(target string) (bool, string) {
+	u, err := url.Parse(target)
+	if err != nil || u.Hostname() == "" {
+		return false, "WEBHOOK_URL is not a valid absolute URL"
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return true, ""
+	case "http":
+		if isLoopbackHost(u.Hostname()) || getEnvBool("WEBHOOK_ALLOW_INSECURE_TOKEN", false) {
+			return true, ""
+		}
+		return false, "WEBHOOK_URL is plain http to a non-loopback host; " +
+			"use https or set WEBHOOK_ALLOW_INSECURE_TOKEN=true to send the bridge token anyway"
+	default:
+		return false, "WEBHOOK_URL scheme must be http or https"
+	}
+}
+
 // sendWebhookPayload marshals and POSTs a WebhookPayload to the configured webhook URL.
 func sendWebhookPayload(payload WebhookPayload) {
 	// No URL, or WEBHOOK_ENABLED=false: do nothing, with no connection attempt
@@ -111,9 +152,16 @@ func sendWebhookPayload(payload WebhookPayload) {
 	// shared bridge token, via a dedicated header so it can never clobber a
 	// receiver's own Authorization-based auth (see webhookAuthToken doc
 	// comment above). WEBHOOK_URL is always operator-configured here (there is
-	// no implicit default), so the token only ever goes where they pointed it.
+	// no implicit default), but the token still never crosses a network in
+	// cleartext (see webhookTokenAllowed).
 	if webhookAuthToken != "" {
-		req.Header.Set("X-Bridge-Token", webhookAuthToken)
+		if ok, reason := webhookTokenAllowed(target); ok {
+			req.Header.Set("X-Bridge-Token", webhookAuthToken)
+		} else {
+			webhookTokenWarnOnce.Do(func() {
+				fmt.Printf("⚠ Bridge token NOT sent with webhooks: %s\n", reason)
+			})
+		}
 	}
 
 	resp, err := webhookClient.Do(req)

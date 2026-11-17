@@ -481,6 +481,7 @@ Copy `.env.example` to `.env` and configure as needed:
 | `WHATSAPP_BRIDGE_PORT` | `8080`                                   | Port for Go bridge REST API                  |
 | `WEBHOOK_URL`          | unset (webhooks off)                     | Webhook for incoming messages. **Opt-in:** nothing is sent until you set this |
 | `WEBHOOK_ENABLED`      | `true`                                   | Set to `false` to switch off a configured `WEBHOOK_URL` without unsetting it |
+| `WEBHOOK_ALLOW_INSECURE_TOKEN` | `false`                        | Send the bridge token to a plain-`http://` webhook on a non-loopback host (e.g. `host.docker.internal`). Off by default; prefer `https://` |
 | `WHATSAPP_AUTO_DOWNLOAD_MEDIA` | `true` | Automatically download incoming media, including webhook image bytes. `false` keeps webhook metadata/text without `mediaBase64` and leaves downloads to `/api/download` (`download_media`); delayed downloads may fail after media expires. Status messages are stored but never auto-downloaded or forwarded |
 | `FORWARD_SELF`         | `true`                                   | Forward messages sent by self                |
 | `WHATSAPP_DB_PATH`     | `../whatsapp-bridge/store/messages.db`   | Path to SQLite database                      |
@@ -551,8 +552,13 @@ anywhere, so no local process can harvest inbound messages by listening on a
 well-known port. (Earlier versions defaulted to
 `http://localhost:8769/whatsapp/webhook`; set `WEBHOOK_URL` explicitly to keep
 that behavior.) The header is attached whenever a token is configured, and it
-only ever goes to the `WEBHOOK_URL` you chose. The bridge token also authorizes
-`/api/*` calls like sending messages, so point it only at a receiver you trust.
+only ever goes to the `WEBHOOK_URL` you chose, and never in cleartext across a
+network: it is sent over `https://`, or over plain `http://` only to a loopback
+host (`localhost`, `127.0.0.1`, `::1`). For a plain-http receiver elsewhere (say
+`host.docker.internal`) the message is still delivered but the token is
+withheld, with one startup warning, unless you set
+`WEBHOOK_ALLOW_INSECURE_TOKEN=true`. The bridge token also authorizes `/api/*`
+calls like sending messages, so point it only at a receiver you trust.
 The webhook client also never follows redirects, so a misconfigured or
 malicious endpoint can't redirect the bridge into leaking the token to a
 different host. If your
