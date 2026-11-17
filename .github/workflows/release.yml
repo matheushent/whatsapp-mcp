@@ -16,21 +16,24 @@ jobs:
     name: Validate Release Inputs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: "1.26"
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.11"
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
 
       - name: Validate version consistency
+        env:
+          # Via env, not interpolated into the script: workflow_dispatch input is free text.
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
         run: |
-          python .github/scripts/check_versions.py --tag "${{ github.event.inputs.tag }}"
+          python .github/scripts/check_versions.py --tag "$RELEASE_TAG"
 
       - name: Verify golangci configuration
         run: |
@@ -38,7 +41,7 @@ jobs:
           go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 config verify
 
       - name: Run Go lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.12.2
           working-directory: whatsapp-bridge
@@ -64,13 +67,13 @@ jobs:
     needs: validate-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: "1.26"
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
 
       - name: Build release artifacts
         run: |
@@ -88,7 +91,7 @@ jobs:
           sha256sum * > SHA256SUMS.txt
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         with:
           tag_name: ${{ github.event.inputs.tag }}
           files: dist/*
