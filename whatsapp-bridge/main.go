@@ -2260,11 +2260,9 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 			direction = "→"
 		}
 
-		// Log based on message type
-		if mediaType != "" {
-			fmt.Printf("[%s] %s %s: [%s: %s] %s\n", timestamp, direction, sender, mediaType, filename, content)
-		} else if content != "" {
-			fmt.Printf("[%s] %s %s: %s\n", timestamp, direction, sender, content)
+		// Log activity without the message text (see formatMessageLogLine).
+		if line := formatMessageLogLine(timestamp, direction, sender, mediaType, filename, content); line != "" {
+			fmt.Println(line)
 		}
 	}
 }
@@ -3655,8 +3653,9 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 					mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength = extractMediaInfo(msg.Message.Message, timestamp, histMsgID)
 				}
 
-				// Log the message content for debugging
-				logger.Infof("Message content: %v, Media Type: %v", content, mediaType)
+				// Log activity for debugging without the message text: history sync
+				// replays the whole chat history, and stdout is often a log file.
+				logger.Infof("Message content length: %d, Media Type: %v", len([]rune(content)), mediaType)
 
 				// Skip messages with no content and no media
 				if content == "" && mediaType == "" {
