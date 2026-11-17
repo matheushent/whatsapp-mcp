@@ -493,6 +493,7 @@ Copy `.env.example` to `.env` and configure as needed:
 | `WHATSAPP_MCP_TRANSPORT` | `stdio`                                | MCP transport to serve clients: `stdio`, `http`, or `sse` |
 | `WHATSAPP_MCP_HOST`    | `127.0.0.1`                              | Bind address for the `http`/`sse` transports |
 | `WHATSAPP_MCP_PORT`    | `8000`                                   | Port for the `http`/`sse` transports |
+| `WHATSAPP_MCP_AUTH_TOKEN` | unset                                 | **Required** for `http`/`sse` (min 16 chars); clients must send `Authorization: Bearer <token>`. The server refuses to start without it |
 | `WHATSAPP_PARENT_WATCHDOG_S` | `30`                              | Stdio parent-liveness poll interval (seconds); exits on parent reparent only |
 
 ### MCP transport (stdio vs http/sse)
@@ -503,6 +504,7 @@ instead, set `WHATSAPP_MCP_TRANSPORT`:
 
 ```bash
 # Streamable HTTP (current spec transport for remote MCP), endpoint at /mcp
+export WHATSAPP_MCP_AUTH_TOKEN=$(python3 -c "import secrets; print(secrets.token_hex(32))")
 WHATSAPP_MCP_TRANSPORT=http WHATSAPP_MCP_PORT=8000 uv run main.py
 
 # Legacy Server-Sent Events transport (deprecated in the MCP spec), endpoint at /sse
@@ -512,11 +514,14 @@ WHATSAPP_MCP_TRANSPORT=sse uv run main.py
 `http` is an alias for the spec's `streamable-http` transport and is the
 recommended choice for remote connections; `sse` is kept for older clients.
 
-> **Security:** `WHATSAPP_MCP_HOST` defaults to `127.0.0.1`, so the HTTP/SSE
-> server is reachable only from the local machine. The server has no built-in
-> authentication, and the underlying bridge can read and send WhatsApp messages
-> on your account. Only bind to a non-loopback address (e.g. `0.0.0.0`) if you
-> place an authenticating reverse proxy or tunnel in front of it.
+> **Security:** the HTTP/SSE transports require `WHATSAPP_MCP_AUTH_TOKEN` and
+> refuse to start without it: every request must carry
+> `Authorization: Bearer <token>`, otherwise it gets a 401. The underlying
+> bridge can read and send WhatsApp messages on your account, so treat the
+> token like a password. `WHATSAPP_MCP_HOST` defaults to `127.0.0.1`; only bind
+> a non-loopback address (e.g. `0.0.0.0`) behind TLS (a reverse proxy or
+> tunnel), because the bearer token is otherwise sent in cleartext. stdio needs
+> no token.
 
 ### Bridge authentication and media paths
 
