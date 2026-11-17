@@ -39,7 +39,7 @@ Repository = "https://github.com/verygoodplugins/whatsapp-mcp"
 Issues = "https://github.com/verygoodplugins/whatsapp-mcp/issues"
 
 [tool.setuptools]
-py-modules = ["main", "whatsapp", "audio", "mcp_auth", "mcp_config", "parent_watchdog", "transcription", "media_preview"]
+py-modules = ["main", "whatsapp", "audio", "mcp_auth", "outbound_policy", "mcp_config", "parent_watchdog", "transcription", "media_preview"]
 
 [tool.mcp]
 name = "io.github.verygoodplugins/whatsapp-mcp"

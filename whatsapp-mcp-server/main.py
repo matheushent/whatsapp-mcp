@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP, Image
 from pydantic import Field
 
 import media_preview
+import outbound_policy
 import transcription
 from mcp_auth import AUTH_TOKEN_ENV, build_authenticated_app, is_loopback_host, require_network_auth_token
 from mcp_config import resolve_host, resolve_port, resolve_transport
@@ -626,6 +627,10 @@ if __name__ == "__main__":
             )
     except ValueError as exc:
         raise SystemExit(str(exc)) from None
+
+    if outbound_policy.is_read_only():
+        hidden = outbound_policy.remove_outbound_tools(mcp)
+        print(f"Read-only mode: hid send tools ({', '.join(hidden)})", file=sys.stderr)
 
     if transport == "stdio":
         install_stdio_parent_watchdog("WHATSAPP_PARENT_WATCHDOG_S", parent_pid=parent_pid)
