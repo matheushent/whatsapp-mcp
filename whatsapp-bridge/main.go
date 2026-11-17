@@ -2954,8 +2954,11 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 }
 
 func webhookStartupMessage(forwardSelf bool) string {
-	if !webhooksEnabled() {
+	if !getEnvBool("WEBHOOK_ENABLED", true) {
 		return "WEBHOOK_ENABLED=false: outbound webhooks disabled"
+	}
+	if webhookURL() == "" {
+		return "WEBHOOK_URL not set: outbound webhooks disabled"
 	}
 	if forwardSelf {
 		return "FORWARD_SELF enabled: forwarding self messages to webhook"

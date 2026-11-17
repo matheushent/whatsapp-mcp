@@ -479,8 +479,8 @@ Copy `.env.example` to `.env` and configure as needed:
 | Variable               | Default                                  | Description                                  |
 | ---------------------- | ---------------------------------------- | -------------------------------------------- |
 | `WHATSAPP_BRIDGE_PORT` | `8080`                                   | Port for Go bridge REST API                  |
-| `WEBHOOK_URL`          | `http://localhost:8769/whatsapp/webhook` | Webhook for incoming messages                |
-| `WEBHOOK_ENABLED`      | `true`                                   | Set to `false` to disable outbound webhooks  |
+| `WEBHOOK_URL`          | unset (webhooks off)                     | Webhook for incoming messages. **Opt-in:** nothing is sent until you set this |
+| `WEBHOOK_ENABLED`      | `true`                                   | Set to `false` to switch off a configured `WEBHOOK_URL` without unsetting it |
 | `WHATSAPP_AUTO_DOWNLOAD_MEDIA` | `true` | Automatically download incoming media, including webhook image bytes. `false` keeps webhook metadata/text without `mediaBase64` and leaves downloads to `/api/download` (`download_media`); delayed downloads may fail after media expires. Status messages are stored but never auto-downloaded or forwarded |
 | `FORWARD_SELF`         | `true`                                   | Forward messages sent by self                |
 | `WHATSAPP_DB_PATH`     | `../whatsapp-bridge/store/messages.db`   | Path to SQLite database                      |
@@ -544,14 +544,18 @@ same token, sent as an `X-Bridge-Token: <token>` header — a dedicated header
 rather than `Authorization`, so it never collides with a receiver's own
 Authorization-based auth (e.g. HTTP Basic auth embedded in `WEBHOOK_URL` as
 `http://user:pass@host/...`, which `net/http` applies automatically as long as
-the bridge doesn't set its own `Authorization` header). The header is attached only when a token is configured **and** `WEBHOOK_URL` was
-explicitly set — never to the built-in local default. The bridge token also
-authorizes `/api/*` calls like sending messages, and nothing has vetted the
-implicit default address, so it must never be handed to whatever process
-happens to be listening there. Upgrades that predate the token rollout, or
-that never set `WEBHOOK_URL`, keep working unchanged. The webhook client also
-never follows redirects, so a misconfigured or malicious endpoint can't
-redirect the bridge into leaking the token to a different host. If your
+the bridge doesn't set its own `Authorization` header).
+
+Webhooks are **opt-in**: with `WEBHOOK_URL` unset the bridge sends nothing
+anywhere, so no local process can harvest inbound messages by listening on a
+well-known port. (Earlier versions defaulted to
+`http://localhost:8769/whatsapp/webhook`; set `WEBHOOK_URL` explicitly to keep
+that behavior.) The header is attached whenever a token is configured, and it
+only ever goes to the `WEBHOOK_URL` you chose. The bridge token also authorizes
+`/api/*` calls like sending messages, so point it only at a receiver you trust.
+The webhook client also never follows redirects, so a misconfigured or
+malicious endpoint can't redirect the bridge into leaking the token to a
+different host. If your
 webhook receiver enforces the token, set its copy to this exact value: e.g.
 the AutoHub hub's `WHATSAPP_BRIDGE_TOKEN` must equal this bridge's token (from
 `.bridge-token` or its own env) — the hub accepts it via `X-Bridge-Token` or

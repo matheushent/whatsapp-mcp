@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -42,13 +43,6 @@ var webhookClient = &http.Client{
 // automatically from credentials embedded in WEBHOOK_URL.
 var webhookAuthToken string
 
-// defaultWebhookURL is used when WEBHOOK_URL is not set. It is a var (not a
-// const) so tests can point it at a local test server. It must never receive
-// the bridge token: unlike an operator-configured WEBHOOK_URL, nothing has
-// vetted this address, so any other local process that happens to bind this
-// port could otherwise capture the token just by being reachable.
-var defaultWebhookURL = "http://localhost:8769/whatsapp/webhook"
-
 // WebhookPayload represents the data sent to the webhook
 type WebhookPayload struct {
 	EventType       string   `json:"eventType,omitempty"`
@@ -73,30 +67,33 @@ type WebhookPayload struct {
 	ReactionRemoved     *bool   `json:"reactionRemoved,omitempty"`
 }
 
-// webhooksEnabled reports whether webhook processing is enabled. Keep this
-// separate from sendWebhookPayload so media callers can avoid their webhook-only
-// file work when delivery is disabled.
+// webhookURL returns the operator-configured WEBHOOK_URL, or "" when unset.
+// There is deliberately no built-in fallback: webhooks carry every inbound
+// message (text and image bytes) and the bridge token, so they only go to an
+// endpoint the operator chose. A hardcoded local default let any local process
+// that bound that port read all messages.
+func webhookURL() string {
+	return strings.TrimSpace(os.Getenv("WEBHOOK_URL"))
+}
+
+// webhooksEnabled reports whether webhook processing is enabled: WEBHOOK_URL
+// must be set, and WEBHOOK_ENABLED must not be false (it defaults to true, so
+// it is only needed to switch a configured URL off without unsetting it). Keep
+// this separate from sendWebhookPayload so media callers can avoid their
+// webhook-only file work when delivery is disabled.
 func webhooksEnabled() bool {
-	return getEnvBool("WEBHOOK_ENABLED", true)
+	return webhookURL() != "" && getEnvBool("WEBHOOK_ENABLED", true)
 }
 
 // sendWebhookPayload marshals and POSTs a WebhookPayload to the configured webhook URL.
 func sendWebhookPayload(payload WebhookPayload) {
-	// WEBHOOK_ENABLED=false turns outbound webhooks off entirely. An empty
-	// WEBHOOK_URL cannot serve that purpose: os.Getenv cannot tell "unset"
-	// from "explicitly empty", and empty deliberately falls back to
-	// defaultWebhookURL below. Deployments with no webhook consumer would
-	// otherwise POST to that default for every message and log a connection
-	// refused error each time.
+	// No URL, or WEBHOOK_ENABLED=false: do nothing, with no connection attempt
+	// and no per-message "connection refused" log noise.
 	if !webhooksEnabled() {
 		return
 	}
 
-	webhookURL := os.Getenv("WEBHOOK_URL")
-	explicitlyConfigured := webhookURL != ""
-	if !explicitlyConfigured {
-		webhookURL = defaultWebhookURL
-	}
+	target := webhookURL()
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
@@ -104,7 +101,7 @@ func sendWebhookPayload(payload WebhookPayload) {
 		return
 	}
 
-	req, err := http.NewRequest(http.MethodPost, webhookURL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest(http.MethodPost, target, bytes.NewBuffer(jsonData))
 	if err != nil {
 		fmt.Printf("Error building webhook request: %v\n", err)
 		return
@@ -113,11 +110,9 @@ func sendWebhookPayload(payload WebhookPayload) {
 	// Authenticate to the hub's fail-closed inbound webhook route with the
 	// shared bridge token, via a dedicated header so it can never clobber a
 	// receiver's own Authorization-based auth (see webhookAuthToken doc
-	// comment above). Only attach it when BOTH a token is configured AND
-	// WEBHOOK_URL was explicitly set by the operator — the bridge token also
-	// authorizes /api/* calls like sending messages, and the implicit local
-	// default is not a destination anyone vetted, so it must never receive it.
-	if webhookAuthToken != "" && explicitlyConfigured {
+	// comment above). WEBHOOK_URL is always operator-configured here (there is
+	// no implicit default), so the token only ever goes where they pointed it.
+	if webhookAuthToken != "" {
 		req.Header.Set("X-Bridge-Token", webhookAuthToken)
 	}
 

@@ -45,21 +45,9 @@ func setWebhookAuthToken(t *testing.T, token string) {
 	t.Cleanup(func() { webhookAuthToken = prev })
 }
 
-// setDefaultWebhookURL points the built-in fallback webhook URL (used when
-// WEBHOOK_URL is unset) at a test server for the duration of a test, and
-// restores the previous value on cleanup.
-func setDefaultWebhookURL(t *testing.T, url string) {
-	t.Helper()
-	prev := defaultWebhookURL
-	defaultWebhookURL = url
-	t.Cleanup(func() { defaultWebhookURL = prev })
-}
-
 // TestSendWebhookDisabledByEnv verifies that WEBHOOK_ENABLED=false suppresses
-// outbound webhooks. An empty WEBHOOK_URL cannot express this, because empty
-// intentionally falls back to defaultWebhookURL (see
-// TestSendWebhookOmitsBridgeTokenOnImplicitDefaultURL), leaving deployments
-// with no webhook consumer no way to opt out.
+// outbound webhooks even when WEBHOOK_URL is set, so a configured URL can be
+// switched off without unsetting it.
 func TestSendWebhookDisabledByEnv(t *testing.T) {
 	var received bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -256,37 +244,47 @@ func TestSendWebhookPreservesURLBasicAuth(t *testing.T) {
 	}
 }
 
-// TestSendWebhookOmitsBridgeTokenOnImplicitDefaultURL is a regression test for
-// a Codex review finding on PR #153: when WEBHOOK_URL is left unset,
-// sendWebhookPayload falls back to a hardcoded local default. That default is
-// not something the operator configured or vetted, so the REST bridge token
-// (which also authorizes /api/* calls like sending messages) must never be
-// attached to it — otherwise any other local process that happens to bind
-// that port could capture the token simply by being reachable. The token
-// must only ever go to a WEBHOOK_URL the operator explicitly set.
-func TestSendWebhookOmitsBridgeTokenOnImplicitDefaultURL(t *testing.T) {
-	const token = "test-bridge-token-1234567890abcdef"
+// TestSendWebhookDisabledWithoutURL guards the opt-in default. There is no
+// built-in fallback endpoint: with WEBHOOK_URL unset (or blank) nothing is sent
+// anywhere, so a local process that happens to listen on a well-known port
+// cannot harvest inbound messages, and no bridge token is attached to anything
+// the operator did not choose.
+func TestSendWebhookDisabledWithoutURL(t *testing.T) {
+	for _, value := range []string{"", "   "} {
+		t.Run("WEBHOOK_URL="+value, func(t *testing.T) {
+			t.Setenv("WEBHOOK_URL", value)
+			unsetWebhookEnabled(t)
+			setWebhookAuthToken(t, "test-bridge-token-1234567890abcdef")
 
-	var gotToken string
-	var received bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received = true
-		gotToken = r.Header.Get("X-Bridge-Token")
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	t.Setenv("WEBHOOK_URL", "") // explicitly unset — exercise the fallback path
-	setDefaultWebhookURL(t, srv.URL)
-	setWebhookAuthToken(t, token)
-
-	SendWebhook("123@s.whatsapp.net", "hi", "123@s.whatsapp.net", false, "", "", "", nil, nil)
-
-	if !received {
-		t.Fatal("webhook was not delivered to the default URL")
+			if webhooksEnabled() {
+				t.Fatalf("webhooksEnabled() = true with WEBHOOK_URL=%q", value)
+			}
+			// Must return without attempting a connection or panicking.
+			SendWebhook("123@s.whatsapp.net", "hi", "123@s.whatsapp.net", false, "", "", "", nil, nil)
+			SendReactionWebhook("123@s.whatsapp.net", "123@s.whatsapp.net", false, "MID", "TARGET", "👍")
+		})
 	}
-	if gotToken != "" {
-		t.Fatalf("expected no X-Bridge-Token header on the implicit default URL, got %q", gotToken)
+}
+
+// TestWebhooksEnabledRequiresURLAndNotDisabled covers the full matrix.
+func TestWebhooksEnabledRequiresURLAndNotDisabled(t *testing.T) {
+	cases := []struct {
+		url, enabled string
+		want         bool
+	}{
+		{"", "", false},
+		{"", "true", false},
+		{"http://127.0.0.1:9/hook", "", true},
+		{"http://127.0.0.1:9/hook", "true", true},
+		{"http://127.0.0.1:9/hook", "false", false},
+		{"  http://127.0.0.1:9/hook  ", "", true},
+	}
+	for _, c := range cases {
+		t.Setenv("WEBHOOK_URL", c.url)
+		t.Setenv("WEBHOOK_ENABLED", c.enabled)
+		if got := webhooksEnabled(); got != c.want {
+			t.Errorf("webhooksEnabled() with WEBHOOK_URL=%q WEBHOOK_ENABLED=%q = %v, want %v", c.url, c.enabled, got, c.want)
+		}
 	}
 }
 
