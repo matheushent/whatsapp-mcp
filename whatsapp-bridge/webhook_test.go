@@ -352,3 +352,90 @@ func TestSendWebhookSerializesNativeMentionAndQuotedOrigin(t *testing.T) {
 		t.Fatalf("mentionedJids = %#v", payload.MentionedJIDs)
 	}
 }
+
+func TestIsLoopbackHost(t *testing.T) {
+	for host, want := range map[string]bool{
+		"localhost": true, "LOCALHOST": true, "127.0.0.1": true, "127.0.0.2": true, "::1": true, "[::1]": true,
+		"0.0.0.0": false, "192.168.1.5": false, "example.com": false, "host.docker.internal": false, "": false,
+	} {
+		if got := isLoopbackHost(host); got != want {
+			t.Errorf("isLoopbackHost(%q) = %v, want %v", host, got, want)
+		}
+	}
+}
+
+func TestWebhookTokenAllowed(t *testing.T) {
+	cases := []struct {
+		target, insecure string
+		want             bool
+	}{
+		{"https://hub.example.com/hook", "", true},
+		{"HTTPS://hub.example.com/hook", "", true},
+		{"http://127.0.0.1:8769/hook", "", true},
+		{"http://localhost:8769/hook", "", true},
+		{"http://[::1]:8769/hook", "", true},
+		{"http://hub.example.com/hook", "", false},
+		{"http://192.168.1.5:8769/hook", "", false},
+		{"http://host.docker.internal:8769/hook", "", false},
+		{"http://host.docker.internal:8769/hook", "true", true},
+		{"ftp://hub.example.com/hook", "true", false},
+		{"file:///etc/passwd", "true", false},
+		{"not a url", "true", false},
+		{"/relative/path", "true", false},
+		{"", "true", false},
+	}
+	for _, c := range cases {
+		t.Setenv("WEBHOOK_ALLOW_INSECURE_TOKEN", c.insecure)
+		got, reason := webhookTokenAllowed(c.target)
+		if got != c.want {
+			t.Errorf("webhookTokenAllowed(%q, insecure=%q) = %v (%s), want %v", c.target, c.insecure, got, reason, c.want)
+		}
+		if !got && reason == "" {
+			t.Errorf("webhookTokenAllowed(%q) denied without a reason", c.target)
+		}
+	}
+}
+
+// recordingTransport answers every request with 200 and remembers the
+// X-Bridge-Token it carried, so a plain-http non-loopback URL can be exercised
+// without any real network.
+type recordingTransport struct {
+	token string
+	seen  bool
+}
+
+func (r *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.seen = true
+	r.token = req.Header.Get("X-Bridge-Token")
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}, Request: req}, nil
+}
+
+// TestSendWebhookWithholdsTokenOverCleartextNonLoopback: the message is still
+// delivered (the operator asked for it), but the token that also authorizes
+// /api/* calls is not sent in cleartext to a non-loopback host.
+func TestSendWebhookWithholdsTokenOverCleartextNonLoopback(t *testing.T) {
+	rt := &recordingTransport{}
+	prev := webhookClient
+	webhookClient = &http.Client{Transport: rt}
+	t.Cleanup(func() { webhookClient = prev })
+
+	t.Setenv("WEBHOOK_URL", "http://hub.example.test:8769/hook")
+	t.Setenv("WEBHOOK_ALLOW_INSECURE_TOKEN", "")
+	setWebhookAuthToken(t, "test-bridge-token-1234567890abcdef")
+
+	SendWebhook("123@s.whatsapp.net", "hi", "123@s.whatsapp.net", false, "", "", "", nil, nil)
+	if !rt.seen {
+		t.Fatal("webhook was not delivered")
+	}
+	if rt.token != "" {
+		t.Fatalf("bridge token sent in cleartext to non-loopback host: %q", rt.token)
+	}
+
+	// Explicit opt-in restores it.
+	rt.seen, rt.token = false, ""
+	t.Setenv("WEBHOOK_ALLOW_INSECURE_TOKEN", "true")
+	SendWebhook("123@s.whatsapp.net", "hi", "123@s.whatsapp.net", false, "", "", "", nil, nil)
+	if rt.token != "test-bridge-token-1234567890abcdef" {
+		t.Fatalf("token with WEBHOOK_ALLOW_INSECURE_TOKEN=true = %q, want it sent", rt.token)
+	}
+}

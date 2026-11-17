@@ -93,6 +93,7 @@ For PR creation, hosted review, CI, and merge readiness, use the installed `baby
 | `WHATSAPP_MCP_AUTH_TOKEN` | unset | Required for `http`/`sse` (min 16 chars); clients send `Authorization: Bearer <token>`. Server refuses to start without it. Not used for stdio |
 | `WEBHOOK_URL` | unset (webhooks off) | Outgoing webhook for incoming messages. Opt-in: with it unset nothing is sent and no bridge token is attached anywhere |
 | `WEBHOOK_ENABLED` | `true` | Set to `false` to switch off a configured `WEBHOOK_URL` without unsetting it |
+| `WEBHOOK_ALLOW_INSECURE_TOKEN` | `false` | Allow sending `X-Bridge-Token` over plain `http://` to a non-loopback webhook host. Without it the token is withheld there (https and loopback http always get it) |
 | `WHATSAPP_AUTO_DOWNLOAD_MEDIA` | `true` | Automatically download incoming media, including webhook image bytes. `false` keeps webhook metadata/text without `mediaBase64` and leaves downloads to `/api/download` (`download_media`); delayed downloads may fail after media expires. Status messages are stored but never auto-downloaded or forwarded |
 | `FORWARD_SELF` | `true` | Whether self-sent messages are forwarded (`getEnvBool` default; set `FORWARD_SELF=false` to disable) |
 | `WHATSAPP_MCP_READ_ONLY` | `false` | `true` hides the send tools and makes `whatsapp.py` refuse any outbound call (messages, files, audio, reactions, read receipts) |
