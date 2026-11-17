@@ -1928,8 +1928,17 @@ func TestWebhookStartupMessage(t *testing.T) {
 	}
 
 	t.Setenv("WEBHOOK_ENABLED", "true")
+	t.Setenv("WEBHOOK_URL", "")
+	if got, want := webhookStartupMessage(true), "WEBHOOK_URL not set: outbound webhooks disabled"; got != want {
+		t.Errorf("no-URL startup message = %q, want %q", got, want)
+	}
+
+	t.Setenv("WEBHOOK_URL", "http://127.0.0.1:9/hook")
 	if got, want := webhookStartupMessage(true), "FORWARD_SELF enabled: forwarding self messages to webhook"; got != want {
 		t.Errorf("enabled startup message = %q, want %q", got, want)
+	}
+	if got, want := webhookStartupMessage(false), "FORWARD_SELF disabled: self messages will NOT be forwarded"; got != want {
+		t.Errorf("enabled startup message (no self) = %q, want %q", got, want)
 	}
 }
 
