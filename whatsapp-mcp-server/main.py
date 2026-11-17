@@ -9,6 +9,7 @@ from pydantic import Field
 
 import media_preview
 import transcription
+from mcp_auth import AUTH_TOKEN_ENV, build_authenticated_app, is_loopback_host, require_network_auth_token
 from mcp_config import resolve_host, resolve_port, resolve_transport
 from parent_watchdog import install_stdio_parent_watchdog
 from whatsapp import (
@@ -609,14 +610,18 @@ if __name__ == "__main__":
     # Resolve the transport first: host/port are only used (and validated) for the
     # network transports, so a bad WHATSAPP_MCP_PORT can't break a stdio launch.
     # The localhost default keeps a remote server unreachable until explicitly opened up.
+    auth_token: str | None = None
     try:
         transport = resolve_transport(os.getenv("WHATSAPP_MCP_TRANSPORT"))
         if transport != "stdio":
             mcp.settings.host = resolve_host(os.getenv("WHATSAPP_MCP_HOST"))
             mcp.settings.port = resolve_port(os.getenv("WHATSAPP_MCP_PORT"))
+            # Fail closed: the network transports expose every tool, so never listen without a token.
+            auth_token = require_network_auth_token(transport, os.getenv(AUTH_TOKEN_ENV))
             # stdout is reserved for the protocol on stdio; log startup to stderr.
             print(
-                f"WhatsApp MCP server listening on {mcp.settings.host}:{mcp.settings.port} via {transport}",
+                f"WhatsApp MCP server listening on {mcp.settings.host}:{mcp.settings.port} via {transport} "
+                f"(bearer auth required{'' if is_loopback_host(mcp.settings.host) else '; NON-LOOPBACK bind'})",
                 file=sys.stderr,
             )
     except ValueError as exc:
@@ -624,4 +629,14 @@ if __name__ == "__main__":
 
     if transport == "stdio":
         install_stdio_parent_watchdog("WHATSAPP_PARENT_WATCHDOG_S", parent_pid=parent_pid)
-    mcp.run(transport=transport)
+        mcp.run(transport=transport)
+    else:
+        import uvicorn
+
+        assert auth_token is not None  # require_network_auth_token guarantees this for http/sse
+        uvicorn.run(
+            build_authenticated_app(mcp, transport, auth_token),
+            host=mcp.settings.host,
+            port=mcp.settings.port,
+            log_level=mcp.settings.log_level.lower(),
+        )
