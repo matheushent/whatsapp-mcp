@@ -28,6 +28,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -88,26 +89,45 @@ func loadOrCreateBridgeToken() (token string, freshlyGenerated bool, err error) 
 	return newToken, true, nil
 }
 
+// stdoutIsTerminal reports whether stdout is an interactive terminal. Under
+// launchd/systemd/docker stdout is redirected to a log file instead.
+func stdoutIsTerminal() bool {
+	info, err := os.Stdout.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
 // printTokenBanner prints a high-visibility startup message when a fresh
-// token has been written. This is the user's only chance to copy the token
-// without having to cat the file, so it's intentionally noisy.
+// token has been written. On a terminal this is the user's only chance to copy
+// the token without having to cat the file, so it's intentionally noisy. When
+// stdout is not a terminal (launchd, docker, a redirect) it is a log file, so
+// the secret itself is left out and the banner points at the 0600 token file.
 func printTokenBanner(token string, port int) {
-	fmt.Println()
-	fmt.Println("════════════════════════════════════════════════════════════════════")
-	fmt.Println("  WHATSAPP BRIDGE AUTH TOKEN — first-time setup")
-	fmt.Println("════════════════════════════════════════════════════════════════════")
-	fmt.Printf("  Token:          %s\n", token)
-	fmt.Printf("  Stored at:      %s (mode 0600)\n", tokenFilePath)
-	fmt.Printf("  Bridge URL:     http://127.0.0.1:%d/api\n", port)
-	fmt.Println()
-	fmt.Println("  The MCP server must send this token on every request:")
-	fmt.Println("    Authorization: Bearer <token>")
-	fmt.Println()
-	fmt.Println("  Configure the whatsapp-mcp-server with one of:")
-	fmt.Println("    export WHATSAPP_BRIDGE_TOKEN=<token>")
-	fmt.Printf("    (or let it read %s automatically)\n", tokenFilePath)
-	fmt.Println("════════════════════════════════════════════════════════════════════")
-	fmt.Println()
+	writeTokenBanner(os.Stdout, token, port, stdoutIsTerminal())
+}
+
+// writeTokenBanner renders the banner to w, including the token only when
+// showToken is true.
+func writeTokenBanner(w io.Writer, token string, port int, showToken bool) {
+	shown := token
+	if !showToken {
+		shown = "(not shown: stdout is not a terminal; read it from the file below)"
+	}
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "════════════════════════════════════════════════════════════════════")
+	_, _ = fmt.Fprintln(w, "  WHATSAPP BRIDGE AUTH TOKEN — first-time setup")
+	_, _ = fmt.Fprintln(w, "════════════════════════════════════════════════════════════════════")
+	_, _ = fmt.Fprintf(w, "  Token:          %s\n", shown)
+	_, _ = fmt.Fprintf(w, "  Stored at:      %s (mode 0600)\n", tokenFilePath)
+	_, _ = fmt.Fprintf(w, "  Bridge URL:     http://127.0.0.1:%d/api\n", port)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "  The MCP server must send this token on every request:")
+	_, _ = fmt.Fprintln(w, "    Authorization: Bearer <token>")
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "  Configure the whatsapp-mcp-server with one of:")
+	_, _ = fmt.Fprintln(w, "    export WHATSAPP_BRIDGE_TOKEN=<token>")
+	_, _ = fmt.Fprintf(w, "    (or let it read %s automatically)\n", tokenFilePath)
+	_, _ = fmt.Fprintln(w, "════════════════════════════════════════════════════════════════════")
+	_, _ = fmt.Fprintln(w)
 }
 
 // withAuth wraps an http.HandlerFunc with bearer-token + Host validation.

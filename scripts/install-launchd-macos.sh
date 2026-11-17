@@ -94,6 +94,16 @@ LAUNCHD_DOMAIN="gui/$USER_ID"
 
 mkdir -p "$SUPPORT_DIR" "$STATE_DIR" "$LOG_DIR" "$LAUNCH_AGENTS_DIR"
 
+# The bridge logs sender numbers and activity to these files. launchd creates
+# missing log files with the default umask, which can leave them readable by
+# other local users, so create the directory owner-only and pre-create each
+# file 0600 (launchd appends to an existing file and keeps its mode).
+chmod 700 "$LOG_DIR"
+for log_name in bridge.out.log bridge.err.log monitor.out.log monitor.err.log; do
+  (umask 077; : >> "$LOG_DIR/$log_name")
+  chmod 600 "$LOG_DIR/$log_name"
+done
+
 if command -v go >/dev/null 2>&1; then
   print -r -- "Building WhatsApp bridge..."
   (cd "$SOURCE_BRIDGE_DIR" && go build -o "$BRIDGE_BINARY" .)

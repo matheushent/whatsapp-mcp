@@ -180,7 +180,7 @@ run_monitor() {
 }
 
 test_install_generates_launchd_files() {
-  local tmp support launch_agents logs repo
+  local tmp support launch_agents logs repo mode
   tmp="$(make_fixture)"
   repo="$(cd "$tmp/repo" && pwd)"
   run_installer "$tmp"
@@ -191,6 +191,13 @@ test_install_generates_launchd_files() {
 
   assert_dir "$support"
   assert_dir "$logs"
+  # Logs hold sender numbers and activity: owner-only, directory and files.
+  mode="$(stat -f '%Lp' "$logs" 2>/dev/null || stat -c '%a' "$logs")"
+  [[ "$mode" == "700" ]] || fail "log dir mode is $mode, expected 700"
+  for log_name in bridge.out.log bridge.err.log monitor.out.log monitor.err.log; do
+    mode="$(stat -f '%Lp' "$logs/$log_name" 2>/dev/null || stat -c '%a' "$logs/$log_name")"
+    [[ "$mode" == "600" ]] || fail "$log_name mode is $mode, expected 600"
+  done
   assert_executable "$support/run-whatsapp-bridge.sh"
   assert_executable "$support/monitor-whatsapp-bridge.sh"
   assert_file "$support/launchd.env"

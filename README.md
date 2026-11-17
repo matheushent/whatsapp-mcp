@@ -534,7 +534,10 @@ the local REST API from other local processes and browser DNS-rebinding attacks.
 
 On first start, the bridge generates a 256-bit token, writes it to
 `.bridge-token` in the active bridge store directory with owner-only
-permissions, and prints a setup banner. The MCP server reads
+permissions, and prints a setup banner. The banner includes the token only
+when stdout is a terminal; under launchd, docker or any redirect (a log file)
+it omits the secret and points at the file instead. The bridge's console log
+records who messaged and how long the message was, never its text. The MCP server reads
 `WHATSAPP_BRIDGE_TOKEN` first, then falls back to `.bridge-token` in the same
 directory as `WHATSMEOW_DB_PATH`. For split deployments, containers, or process
 managers that do not share the store directory, set the same
