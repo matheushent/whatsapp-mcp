@@ -494,6 +494,8 @@ Copy `.env.example` to `.env` and configure as needed:
 | `WHATSAPP_MCP_HOST`    | `127.0.0.1`                              | Bind address for the `http`/`sse` transports |
 | `WHATSAPP_MCP_PORT`    | `8000`                                   | Port for the `http`/`sse` transports |
 | `WHATSAPP_MCP_AUTH_TOKEN` | unset                                 | **Required** for `http`/`sse` (min 16 chars); clients must send `Authorization: Bearer <token>`. The server refuses to start without it |
+| `WHATSAPP_MCP_READ_ONLY` | `false`                                | `true` hides and blocks every tool that sends to WhatsApp (messages, files, audio, reactions, read receipts) |
+| `WHATSAPP_ALLOWED_RECIPIENTS` | unset                              | Comma-separated phone numbers and/or JIDs; outbound actions to any other chat are refused. Unset = no restriction |
 | `WHATSAPP_PARENT_WATCHDOG_S` | `30`                              | Stdio parent-liveness poll interval (seconds); exits on parent reparent only |
 
 ### MCP transport (stdio vs http/sse)
@@ -1133,7 +1135,7 @@ go run .
 
 ## Security Notice
 
-> **Caution**: As with many MCP servers, this is subject to [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/). Prompt injection could lead to private data exfiltration. Use with awareness.
+> **Caution**: As with many MCP servers, this is subject to [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/). Prompt injection could lead to private data exfiltration. Use with awareness. To shrink the blast radius, set `WHATSAPP_MCP_READ_ONLY=true` (no sending at all) or `WHATSAPP_ALLOWED_RECIPIENTS` (only the chats you list). Both are enforced in the MCP server, not the bridge REST API, and are off by default.
 
 On Unix-like systems, newly created bridge `store/` and per-chat media
 directories request owner-only permissions (`0700`), and newly downloaded media

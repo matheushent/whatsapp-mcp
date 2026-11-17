@@ -95,6 +95,8 @@ For PR creation, hosted review, CI, and merge readiness, use the installed `baby
 | `WEBHOOK_ENABLED` | `true` | Set to `false` to disable outbound webhooks entirely |
 | `WHATSAPP_AUTO_DOWNLOAD_MEDIA` | `true` | Automatically download incoming media, including webhook image bytes. `false` keeps webhook metadata/text without `mediaBase64` and leaves downloads to `/api/download` (`download_media`); delayed downloads may fail after media expires. Status messages are stored but never auto-downloaded or forwarded |
 | `FORWARD_SELF` | `true` | Whether self-sent messages are forwarded (`getEnvBool` default; set `FORWARD_SELF=false` to disable) |
+| `WHATSAPP_MCP_READ_ONLY` | `false` | `true` hides the send tools and makes `whatsapp.py` refuse any outbound call (messages, files, audio, reactions, read receipts) |
+| `WHATSAPP_ALLOWED_RECIPIENTS` | unset | Comma-separated phone numbers/JIDs; outbound actions to other chats are refused. Phone and LID forms match via the LID map; groups need the exact `@g.us` JID |
 | `WHATSAPP_PARENT_WATCHDOG_S` | `30` | Stdio parent-liveness poll interval (seconds). Exits when the original parent is gone (POSIX reparent). Soft stdin EOF alone does not exit. |
 | `WHISPER_MODEL` | unset | Required model-file path for default whisper.cpp transcription |
 | `WHISPER_LANGUAGE` | `auto` | Language for whisper.cpp transcription |

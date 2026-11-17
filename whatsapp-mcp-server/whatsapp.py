@@ -10,6 +10,7 @@ from typing import Any
 import requests
 
 import audio
+import outbound_policy
 
 # Configuration via environment variables with sensible defaults
 _DEFAULT_BRIDGE_STORE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "whatsapp-bridge", "store")
@@ -1157,6 +1158,12 @@ def get_direct_chat_by_contact(sender_phone_number: str) -> dict[str, Any] | Non
             conn.close()
 
 
+def _outbound_denied(target: str) -> tuple[bool, str] | None:
+    """(False, reason) when outbound policy forbids acting on ``target``, else None."""
+    reason = outbound_policy.denial_reason(target, _sender_aliases)
+    return (False, reason) if reason else None
+
+
 def send_message(
     recipient: str,
     message: str,
@@ -1169,6 +1176,8 @@ def send_message(
         # Validate input
         if not recipient:
             return False, "Recipient must be provided"
+        if denied := _outbound_denied(recipient):
+            return denied
 
         url = f"{WHATSAPP_API_BASE_URL}/send"
         payload: dict[str, Any] = {
@@ -1213,6 +1222,8 @@ def send_file(recipient: str, media_path: str, caption: str = "") -> tuple[bool,
 
         if not media_path:
             return False, "Media path must be provided"
+        if denied := _outbound_denied(recipient):
+            return denied
 
         if not os.path.isfile(media_path):
             return False, f"Media file not found: {media_path}"
@@ -1247,6 +1258,8 @@ def send_audio_message(recipient: str, media_path: str) -> tuple[bool, str]:
 
         if not media_path:
             return False, "Media path must be provided"
+        if denied := _outbound_denied(recipient):
+            return denied
 
         if not os.path.isfile(media_path):
             return False, f"Media file not found: {media_path}"
@@ -1313,6 +1326,8 @@ def send_reaction(
             return False, "Recipient must be provided"
         if not message_id:
             return False, "Message ID must be provided"
+        if denied := _outbound_denied(recipient):
+            return denied
 
         url = f"{WHATSAPP_API_BASE_URL}/react"
         payload: dict[str, Any] = {
@@ -1356,6 +1371,8 @@ def mark_messages_read(
             return False, "Chat JID must be provided"
         if chat_jid.endswith("@g.us") and not sender_jid:
             return False, "Sender JID must be provided for group read receipts"
+        if denied := _outbound_denied(chat_jid):
+            return denied
 
         payload: dict[str, Any] = {
             "message_ids": normalized_ids,
