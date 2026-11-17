@@ -20,6 +20,8 @@ from urllib.parse import urlsplit
 
 import requests
 
+import media_preview
+
 # Marks text this module produced. Speech recognition gets words wrong, so a
 # transcript must never be mistaken for something a human typed — and the
 # marker is what lets a later run tell its own output from a real message.
@@ -144,10 +146,11 @@ def transcribe_http(source: Path, model: str) -> str:
 def decode_command(source: Path, destination: Path) -> list[str]:
     return [
         "ffmpeg",
-        "-nostdin",
         "-v",
         "error",
         "-y",
+        # Voice notes are sender-controlled input: see media_preview.FFMPEG_INPUT_GUARDS.
+        *media_preview.FFMPEG_INPUT_GUARDS,
         "-i",
         str(source),
         "-ar",
@@ -156,6 +159,8 @@ def decode_command(source: Path, destination: Path) -> list[str]:
         "1",
         "-c:a",
         "pcm_s16le",
+        "-fs",
+        str(media_preview.FFMPEG_MAX_OUTPUT_BYTES),
         str(destination),
     ]
 

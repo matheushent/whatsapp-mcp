@@ -331,3 +331,38 @@ def test_http_ignores_ambient_credentials_and_proxies(tmp_path, monkeypatch):
 
     monkeypatch.setattr(transcription.requests.Session, "send", send)
     assert transcription.transcribe_http(audio, "parakeet") == "hello"
+
+
+def test_decode_command_pins_input_to_local_files_and_bounds_resources(tmp_path):
+    """Voice notes are sender-controlled: same input guards as image/video previews."""
+    command = transcription.decode_command(tmp_path / "a.ogg", tmp_path / "a.wav")
+    assert command[command.index("-protocol_whitelist") + 1] == "file"
+    assert command.index("-protocol_whitelist") < command.index("-i")
+    assert command.index("-max_alloc") < command.index("-i")
+    assert "-nostdin" in command
+    assert int(command[command.index("-fs") + 1]) == transcription.media_preview.FFMPEG_MAX_OUTPUT_BYTES
+    assert command[-1] == str(tmp_path / "a.wav")
+
+
+@pytest.mark.skipif(not transcription.ffmpeg_available(), reason="ffmpeg not installed")
+def test_guarded_decode_runs_on_a_real_ffmpeg(tmp_path):
+    source = tmp_path / "tone.ogg"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=0.2",
+            "-c:a",
+            "libopus",
+            str(source),
+        ],
+        check=True,
+    )
+    wav = tmp_path / "tone.wav"
+    result = subprocess.run(transcription.decode_command(source, wav), capture_output=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert wav.stat().st_size > 0

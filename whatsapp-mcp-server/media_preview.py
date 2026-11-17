@@ -27,6 +27,17 @@ MIN_MAX_DIMENSION = 1
 MAX_MAX_DIMENSION = 2048
 FFMPEG_TIMEOUT_SECONDS = 60
 
+# The bytes ffmpeg reads here come from whoever sent the WhatsApp message, and a
+# sender controls the file content regardless of the .jpg/.mp4/.ogg name the
+# bridge gives it. ffmpeg sniffs the real format, so a crafted playlist or
+# container can try to make it open other resources. Pin the input to plain local
+# files (no http/tcp/ftp, so no SSRF or exfiltration from a media file) and bound
+# single allocations and output size so a decompression bomb cannot exhaust the
+# host. Modern ffmpeg already restricts local playlists by default; stating it
+# here keeps the behavior independent of the installed ffmpeg version or build.
+FFMPEG_INPUT_GUARDS = ["-nostdin", "-protocol_whitelist", "file", "-max_alloc", str(512 * 1024 * 1024)]
+FFMPEG_MAX_OUTPUT_BYTES = 256 * 1024 * 1024
+
 
 class PreviewError(RuntimeError):
     """Media cannot be rendered as an image, with a reason worth showing."""
@@ -80,6 +91,7 @@ def ffmpeg_command(source: Path, destination: Path, max_dimension: int) -> list[
         "-v",
         "error",
         "-y",
+        *FFMPEG_INPUT_GUARDS,
         "-i",
         str(source),
         "-frames:v",
@@ -88,6 +100,8 @@ def ffmpeg_command(source: Path, destination: Path, max_dimension: int) -> list[
         scale_filter(max_dimension),
         "-q:v",
         "4",
+        "-fs",
+        str(FFMPEG_MAX_OUTPUT_BYTES),
         str(destination),
     ]
 

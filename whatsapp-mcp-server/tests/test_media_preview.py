@@ -167,3 +167,65 @@ def test_ffmpeg_failure_surfaces_its_reason(tmp_path, monkeypatch):
     with pytest.raises(media_preview.PreviewError) as excinfo:
         media_preview.render_preview(source)
     assert "Invalid data found" in str(excinfo.value)
+
+
+def _flag_value(command, flag):
+    return command[command.index(flag) + 1]
+
+
+def test_preview_command_pins_input_to_local_files_and_bounds_resources(tmp_path):
+    """Sender-controlled bytes reach ffmpeg: only the file protocol, capped allocations and output."""
+    command = media_preview.ffmpeg_command(tmp_path / "in.mp4", tmp_path / "out.jpg", 640)
+    assert _flag_value(command, "-protocol_whitelist") == "file"
+    assert int(_flag_value(command, "-max_alloc")) > 0
+    assert int(_flag_value(command, "-fs")) == media_preview.FFMPEG_MAX_OUTPUT_BYTES
+    assert "-nostdin" in command
+    # Guards must be input options: they only take effect when placed before -i.
+    assert command.index("-protocol_whitelist") < command.index("-i")
+    assert command.index("-max_alloc") < command.index("-i")
+    assert command[-1] == str(tmp_path / "out.jpg")
+
+
+@pytest.mark.skipif(not media_preview.ffmpeg_available(), reason="ffmpeg not installed")
+def test_guarded_command_still_renders_a_real_image(tmp_path):
+    """The hardening flags must be accepted by a real ffmpeg, not just present in the argv."""
+    source = tmp_path / "photo.jpg"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=64x64", "-frames:v", "1", str(source)],
+        check=True,
+    )
+    data, image_format = media_preview.render_preview(source, max_dimension=32, work_dir=tmp_path)
+    assert image_format == "jpeg"
+    assert data.startswith(b"\xff\xd8\xff")
+
+
+@pytest.mark.skipif(not media_preview.ffmpeg_available(), reason="ffmpeg not installed")
+def test_playlist_pointing_at_a_network_url_never_makes_a_request(tmp_path):
+    """A sender can name an HLS playlist 'photo.jpg'. It must not make ffmpeg reach out over the network."""
+    import http.server
+    import threading
+
+    hits = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        source = tmp_path / "evil.m3u8"
+        source.write_text(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n"
+            f"http://127.0.0.1:{server.server_address[1]}/ssrf.ts\n#EXT-X-ENDLIST\n"
+        )
+        with pytest.raises(media_preview.PreviewError):
+            media_preview.render_preview(source, work_dir=tmp_path)
+    finally:
+        server.shutdown()
+    assert hits == []
